@@ -94,9 +94,10 @@ from langchain_google_genai import ChatGoogleGenerativeAI  # LLM Gemini
 ## Gemini (modelo free)
 
 - Crie uma **API Key** da Google: https://aistudio.google.com/app/apikey
-- **Modelo de LLM para responder**: `gemini-2.5-flash`
-- **Modelo de LLM para avaliação**: `gemini-2.5-flash`
+- **Modelo de LLM para responder**: `gemini-flash-lite-latest`
+- **Modelo de LLM para avaliação**: `gemini-flash-lite-latest`
 - **Limite:** 15 req/min, 1500 req/dia
+- `gemini-2.5-flash-lite`/`gemini-2.5-flash` estão descontinuados (404 para chaves novas) — ver ADR-0006
 
 ---
 
