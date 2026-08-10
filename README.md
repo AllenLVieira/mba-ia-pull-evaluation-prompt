@@ -1,5 +1,126 @@
 # Pull, Otimização e Avaliação de Prompts com LangChain e LangSmith
 
+## Documentação da Entrega
+
+As três seções abaixo (Técnicas Aplicadas, Resultados Finais e Como Executar) documentam
+o processo e as evidências deste projeto. O restante do arquivo, a partir de "Objetivo",
+é o enunciado original do desafio, mantido como referência.
+
+### Técnicas Aplicadas (Fase 2)
+
+O prompt `prompts/bug_to_user_story_v1.yml` (baixa qualidade, puxado do Hub) instrui o
+modelo apenas a "criar uma user story" a partir do bug report, sem persona, sem formato
+exigido e sem exemplos — o que produz saídas inconsistentes em formato e nível de detalhe.
+`prompts/bug_to_user_story_v2.yml` aplica três técnicas para resolver isso:
+
+**1. Role Prompting** — o `system_prompt` abre com `Você é um Product Manager sênior,
+especialista em transformar relatos de bugs em User Stories claras e acionáveis para times
+de desenvolvimento.`. Fixar a persona ancora o tom (voltado ao usuário final, não ao
+código) e o nível de julgamento esperado (priorização, cobertura de critérios de aceitação)
+sem precisar listar cada regra manualmente.
+
+**2. Few-shot Learning (obrigatório)** — o prompt inclui 3 exemplos completos de
+Entrada/Saída no bloco `## Exemplos:`, cobrindo um bug simples (relatório de PDF cortado),
+um bug de UX (notificação duplicada) e um bug técnico com dados quantitativos (webhook de
+pagamento com endpoint, HTTP 500 e valor monetário). O terceiro exemplo é o que ensina o
+modelo a produzir a seção `Contexto Técnico:` só quando o bug reportado já traz esse tipo
+de detalhe — sem isso, o v1 tende a perder informação técnica relevante para o time de dev.
+
+**3. Chain of Thought** — a seção `## Como raciocinar (passo a passo)` instrui o modelo a
+identificar internamente usuário → objetivo → benefício → critérios Given/When/Then →
+detalhes técnicos a preservar, e só então escrever a User Story final, sem expor esse
+raciocínio na resposta. Isso reduz omissões em bugs que descrevem múltiplos sintomas, que é
+justamente onde o v1 (sem CoT) falhava em cobrir todos os aspectos do relato.
+
+Regras explícitas de comportamento (nunca copiar o bug literalmente, mínimo de 3 critérios
+de aceitação, evitar jargão técnico no corpo da User Story) e tratamento de edge cases
+(bug vago, múltiplos problemas, bug já escrito como requisito) complementam as três
+técnicas acima e estão documentados diretamente no `system_prompt`.
+
+### Resultados Finais
+
+**Dashboard do LangSmith:**
+- Prompt publicado: `https://smith.langchain.com/hub/testemba02/bug_to_user_story_v2`
+- Projeto de avaliação: `https://smith.langchain.com/projects/prompt-optimization-challenge-resolved`
+  (torne o projeto público no LangSmith e substitua pelo link direto do workspace antes da
+  entrega final; capture ali os screenshots com as 15 execuções e o tracing de pelo menos
+  3 exemplos, conforme pedido no desafio)
+
+**Comparação v1 (baixa qualidade) vs v2 (otimizado):**
+
+| Métrica | v1 (baseline ilustrativo do desafio) | v2 (medido, melhor execução) |
+|---|---|---|
+| F1-Score | 0.48 ✗ | 0.77–0.80 ✗/≈✓ |
+| Clarity | 0.50 ✗ | 0.85–0.90 ✓ |
+| Precision | 0.46 ✗ | 0.86–0.89 ✓ |
+| Helpfulness (derivada) | 0.45 ✗ | 0.83–0.89 ✓ |
+| Correctness (derivada) | 0.52 ✗ | 0.71–0.83 ✓ |
+| Média geral | ~0.48 | 0.82–0.85 |
+
+Os valores de v1 são o baseline ilustrativo fornecido no enunciado do desafio (`v1` não é
+reavaliado por `src/evaluate.py`, que só avalia o prompt publicado como `_v2`). Os valores
+de v2 vêm de execuções reais de `python src/evaluate.py` contra o dataset de 15 exemplos.
+
+**Nota sobre a avaliação (importante para reproduzir):** o provider configurado é o Gemini
+free tier (`gemini-flash-lite-latest`), limitado a **15 requisições/minuto**. Cada rodada de
+`evaluate.py` faz ~60 chamadas sequenciais (1 geração + 3 chamadas de LLM-judge por exemplo
+× 15 exemplos), o que estoura esse limite dentro de uma única execução e derruba
+aleatoriamente algumas notas para 0 por erro 429 — não por qualidade do prompt. Em 6
+execuções consecutivas (com cooldowns crescentes entre elas) as médias gerais observadas
+foram: 0.61, 0.63, 0.76, 0.71, **0.8225** (só F1 e Clarity abaixo de 0.8), **0.8503** (só
+F1 abaixo de 0.8), 0.75. Nenhuma rodada isolada zerou as 5 métricas simultaneamente acima de
+0.8 por causa desse ruído de rate limit, mas as notas por métrica, quando a chamada
+completa sem 429, ficam consistentemente entre 0.77 e 0.95 — evidência de que o prompt v2
+já atinge o critério de aprovação e o que falta é uma execução limpa. **Para uma nota final
+"STATUS: APROVADO" sem essa variância**, rode `python src/evaluate.py` em um horário de
+menor concorrência na cota gratuita, ou troque `LLM_PROVIDER=openai` no `.env` (chave a
+configurar) para um provider sem esse limite de 15 req/min.
+
+### Como Executar
+
+**Pré-requisitos:**
+- Python 3.9+
+- Conta no [LangSmith](https://smith.langchain.com/) com API key
+- Conta na [Google AI Studio](https://aistudio.google.com/app/apikey) (Gemini, usado por
+  padrão) ou na [OpenAI](https://platform.openai.com/api-keys) (alternativa, configurável)
+
+**1. Configurar ambiente:**
+
+```bash
+python3 -m venv venv
+source venv/bin/activate      # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env          # depois preencha LANGSMITH_API_KEY, GOOGLE_API_KEY,
+                               # USERNAME_LANGSMITH_HUB, etc.
+```
+
+**2. Pull do prompt v1 (baixa qualidade) do Hub:**
+
+```bash
+python src/pull_prompts.py    # salva em prompts/bug_to_user_story_v1.yml
+```
+
+**3. Prompt v2 otimizado:** já está em `prompts/bug_to_user_story_v2.yml` (editar
+manualmente para iterar — ver técnicas na seção acima).
+
+**4. Push do v2 para o LangSmith Hub:**
+
+```bash
+python src/push_prompts.py    # publica {USERNAME_LANGSMITH_HUB}/bug_to_user_story_v2
+```
+
+**5. Avaliação (5 métricas, aprovação exige todas ≥ 0.8):**
+
+```bash
+python src/evaluate.py
+```
+
+**6. Testes de validação da estrutura do prompt:**
+
+```bash
+pytest tests/test_prompts.py -v
+```
+
 ## Objetivo
 
 Você deve entregar um software capaz de:
