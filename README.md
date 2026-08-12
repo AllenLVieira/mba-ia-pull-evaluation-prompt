@@ -20,69 +20,98 @@ código) e o nível de julgamento esperado (priorização, cobertura de critéri
 sem precisar listar cada regra manualmente.
 
 **2. Few-shot Learning (obrigatório)** — o prompt inclui 3 exemplos completos de
-Entrada/Saída no bloco `## Exemplos:`, cobrindo um bug simples (relatório de PDF cortado),
-um bug de UX (notificação duplicada) e um bug técnico com dados quantitativos (webhook de
-pagamento com endpoint, HTTP 500 e valor monetário). O terceiro exemplo é o que ensina o
-modelo a produzir a seção `Contexto Técnico:` só quando o bug reportado já traz esse tipo
-de detalhe — sem isso, o v1 tende a perder informação técnica relevante para o time de dev.
+Entrada/Saída no bloco `## Exemplos`, um por nível de complexidade: um bug **simples**
+(validação de email), um bug **médio** com dados quantitativos e seção `Contexto Técnico:`
+(relatório lento sem índice), e um bug **complexo** com múltiplos problemas e a estrutura
+completa de seções `=== ... ===` (login com falhas de segurança, performance e UX). Os
+exemplos ensinam o modelo não só *o que* escrever, mas *quanto* escrever conforme o relato.
 
-**3. Chain of Thought** — a seção `## Como raciocinar (passo a passo)` instrui o modelo a
-identificar internamente usuário → objetivo → benefício → critérios Given/When/Then →
-detalhes técnicos a preservar, e só então escrever a User Story final, sem expor esse
-raciocínio na resposta. Isso reduz omissões em bugs que descrevem múltiplos sintomas, que é
-justamente onde o v1 (sem CoT) falhava em cobrir todos os aspectos do relato.
+**3. Chain of Thought** — a seção `## Como raciocinar (passo a passo, internamente)` instrui
+o modelo a primeiro **classificar a complexidade do bug** (simples / médio / complexo),
+depois identificar usuário → objetivo → benefício → enumerar todos os problemas distintos →
+critérios Given/When/Then → detalhes técnicos a preservar, e só então escrever a User Story
+final, sem expor esse raciocínio. Essa etapa de classificação é o que dispara o formato de
+saída correto para cada bug.
 
-Regras explícitas de comportamento (nunca copiar o bug literalmente, mínimo de 3 critérios
-de aceitação, evitar jargão técnico no corpo da User Story) e tratamento de edge cases
-(bug vago, múltiplos problemas, bug já escrito como requisito) complementam as três
-técnicas acima e estão documentados diretamente no `system_prompt`.
+Regras explícitas de comportamento (nunca copiar o bug literalmente, persona específica,
+mínimo de 3 critérios, cobrir todos os problemas em bugs complexos, evitar jargão técnico no
+corpo da User Story) e tratamento de edge cases (bug vago, bug já escrito como requisito)
+complementam as três técnicas acima e estão documentados diretamente no `system_prompt`.
+
+#### Iteração 2 — saída adaptativa por complexidade
+
+A primeira versão do v2 aplicava Role + Few-shot + CoT, mas **reprovava por F1-Score**
+(0.72) e, por consequência, em Correctness (0.77). A análise por exemplo no dataset (5 bugs
+simples, 7 médios, 3 complexos) e da métrica de F1 em `src/metrics.py` — que é
+`2·(precision·recall)/(precision+recall)` comparando a saída gerada com o `reference` do
+dataset — revelou duas causas concretas:
+
+1. **Recall destruído nos bugs complexos.** A v1 do v2 tinha a regra *"foque no problema
+   principal e ignore os secundários"*. Mas os `reference` dos 3 bugs complexos cobrem
+   **todos** os problemas, em seções `=== USER STORY PRINCIPAL ===`, `=== CRITÉRIOS
+   TÉCNICOS ===`, `=== CONTEXTO DO BUG ===` e `=== TASKS TÉCNICAS SUGERIDAS ===`. Ignorar
+   problemas secundários e omitir essas seções derrubava o recall exatamente onde mais pesa.
+2. **Precisão prejudicada nos bugs simples.** Forçar uma seção `Contexto Técnico:` em bugs
+   simples (cujos `reference` são compactos e não têm essa seção) adicionava conteúdo que o
+   avaliador contava como informação irrelevante.
+
+A **iteração 2** corrige isso fazendo o modelo classificar a complexidade no CoT e **adaptar
+a estrutura da saída ao nível**: saída compacta para bugs simples (protege a precisão),
+`Contexto Técnico:` para bugs médios, e o documento completo com seções `=== ... ===`
+cobrindo cada problema para bugs complexos (recupera o recall). A regra de "ignorar
+secundários" foi removida e substituída por "cubra cada um dos problemas descritos". O F1
+subiu de 0.72 → **0.82** e a média de 0.80 → **0.86**, aprovando em todas as 5 métricas.
 
 ### Resultados Finais
 
 **Dashboard do LangSmith:**
 - Prompt publicado: `https://smith.langchain.com/hub/testemba02/bug_to_user_story_v2`
-- Projeto de avaliação: `https://smith.langchain.com/projects/prompt-optimization-challenge-resolved`
-  (torne o projeto público no LangSmith e substitua pelo link direto do workspace antes da
-  entrega final; capture ali os screenshots com as 15 execuções e o tracing de pelo menos
-  3 exemplos, conforme pedido no desafio)
+- Projeto de avaliação: `https://smith.langchain.com/projects/prompt-optimization-challenge-resolved-v2`
+  (torne o projeto público no LangSmith antes da entrega final e capture ali os screenshots
+  com as 15 execuções e o tracing de pelo menos 3 exemplos, conforme pedido no desafio)
 
-**Comparação v1 (baixa qualidade) vs v2 (otimizado):**
+**Ambiente de avaliação:** provider **OpenAI** — `gpt-4o-mini` para gerar a User Story e
+`gpt-4o` como LLM-judge das métricas. Diferente do Gemini free tier (limitado a 15 req/min,
+que introduzia erros 429 e ruído nas notas), o OpenAI completa as ~60 chamadas sequenciais
+de uma rodada de `evaluate.py` sem rate limit, produzindo notas estáveis e reproduzíveis.
 
-| Métrica | v1 (baseline ilustrativo do desafio) | v2 (medido, melhor execução) |
-|---|---|---|
-| F1-Score | 0.48 ✗ | 0.77–0.80 ✗/≈✓ |
-| Clarity | 0.50 ✗ | 0.85–0.90 ✓ |
-| Precision | 0.46 ✗ | 0.86–0.89 ✓ |
-| Helpfulness (derivada) | 0.45 ✗ | 0.83–0.89 ✓ |
-| Correctness (derivada) | 0.52 ✗ | 0.71–0.83 ✓ |
-| Média geral | ~0.48 | 0.82–0.85 |
+**Comparação v1 (baixa qualidade) vs v2 (otimizado) — rodada limpa, OpenAI:**
 
-Os valores de v1 são o baseline ilustrativo fornecido no enunciado do desafio (`v1` não é
-reavaliado por `src/evaluate.py`, que só avalia o prompt publicado como `_v2`). Os valores
-de v2 vêm de execuções reais de `python src/evaluate.py` contra o dataset de 15 exemplos.
+| Métrica | v1 (`leonanluppi/bug_to_user_story_v1`) | v2 iteração 1 | **v2 iteração 2 (final)** |
+|---|---|---|---|
+| F1-Score | 0.71 ✗ | 0.72 ✗ | **0.82 ✓** |
+| Clarity | 0.87 ✓ | 0.86 ✓ | **0.90 ✓** |
+| Precision | 0.83 ✓ | 0.82 ✓ | **0.86 ✓** |
+| Helpfulness (derivada) | 0.85 ✓ | 0.84 ✓ | **0.88 ✓** |
+| Correctness (derivada) | 0.77 ✗ | 0.77 ✗ | **0.84 ✓** |
+| **Média geral** | 0.8049 ✗ | 0.8006 ✗ | **0.8599 ✓** |
+| **Status** | ❌ REPROVADO | ❌ REPROVADO | ✅ **APROVADO** |
 
-**Nota sobre a avaliação (importante para reproduzir):** o provider configurado é o Gemini
-free tier (`gemini-flash-lite-latest`), limitado a **15 requisições/minuto**. Cada rodada de
-`evaluate.py` faz ~60 chamadas sequenciais (1 geração + 3 chamadas de LLM-judge por exemplo
-× 15 exemplos), o que estoura esse limite dentro de uma única execução e derruba
-aleatoriamente algumas notas para 0 por erro 429 — não por qualidade do prompt. Em 6
-execuções consecutivas (com cooldowns crescentes entre elas) as médias gerais observadas
-foram: 0.61, 0.63, 0.76, 0.71, **0.8225** (só F1 e Clarity abaixo de 0.8), **0.8503** (só
-F1 abaixo de 0.8), 0.75. Nenhuma rodada isolada zerou as 5 métricas simultaneamente acima de
-0.8 por causa desse ruído de rate limit, mas as notas por métrica, quando a chamada
-completa sem 429, ficam consistentemente entre 0.77 e 0.95 — evidência de que o prompt v2
-já atinge o critério de aprovação e o que falta é uma execução limpa. **Para uma nota final
-"STATUS: APROVADO" sem essa variância**, rode `python src/evaluate.py` em um horário de
-menor concorrência na cota gratuita, ou troque `LLM_PROVIDER=openai` no `.env` (chave a
-configurar) para um provider sem esse limite de 15 req/min.
+Todos os valores acima são de execuções reais de `python src/evaluate.py` contra o dataset
+de 15 exemplos (o `v1` também foi medido de verdade, puxado do Hub, e não apenas o baseline
+ilustrativo do enunciado). Note que, com um LLM-judge sem ruído de rate limit, o `v1` de
+baixa qualidade não é tão baixo quanto o baseline ilustrativo do desafio (~0.48) sugeria — o
+gap real entre v1 e v2 está concentrado justamente no **F1-Score** e na **Correctness**, as
+métricas que a iteração 2 atacou diretamente ao adaptar a saída à complexidade do bug.
+
+Onde o v2 iteração 2 mais ganhou (F1 por exemplo, bugs médios/complexos): #6 webhook
+0.72→0.90, #9 cálculo de desconto 0.55→1.00, #14 relatórios gerenciais 0.85→1.00 — todos
+casos em que cobrir todos os problemas e emitir as seções técnicas/`=== ... ===` recuperou o
+recall que a iteração 1 perdia.
+
+**Reprodutibilidade:** para reproduzir os números da tabela, mantenha `LLM_PROVIDER=openai`
+no `.env` (com `LLM_MODEL=gpt-4o-mini` e `EVAL_MODEL=gpt-4o`) e rode `python src/evaluate.py`.
+As notas de LLM-judge têm pequena variância entre rodadas (±0.02–0.05 por métrica), mas a v2
+iteração 2 aprova consistentemente em todas as 5 métricas.
 
 ### Como Executar
 
 **Pré-requisitos:**
 - Python 3.9+
 - Conta no [LangSmith](https://smith.langchain.com/) com API key
-- Conta na [Google AI Studio](https://aistudio.google.com/app/apikey) (Gemini, usado por
-  padrão) ou na [OpenAI](https://platform.openai.com/api-keys) (alternativa, configurável)
+- Conta na [OpenAI](https://platform.openai.com/api-keys) (provider usado para os resultados
+  finais deste projeto) ou na [Google AI Studio](https://aistudio.google.com/app/apikey)
+  (Gemini free tier, alternativa configurável)
 
 **1. Configurar ambiente:**
 
@@ -90,9 +119,13 @@ configurar) para um provider sem esse limite de 15 req/min.
 python3 -m venv venv
 source venv/bin/activate      # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env          # depois preencha LANGSMITH_API_KEY, GOOGLE_API_KEY,
-                               # USERNAME_LANGSMITH_HUB, etc.
+cp .env.example .env          # depois preencha LANGSMITH_API_KEY, USERNAME_LANGSMITH_HUB,
+                               # OPENAI_API_KEY, etc.
 ```
+
+O `.env` usado nos resultados finais define `LLM_PROVIDER=openai`, `LLM_MODEL=gpt-4o-mini` e
+`EVAL_MODEL=gpt-4o`. Para usar o Gemini free tier, troque para `LLM_PROVIDER=google` e
+preencha `GOOGLE_API_KEY` (sujeito ao limite de 15 req/min).
 
 **2. Pull do prompt v1 (baixa qualidade) do Hub:**
 

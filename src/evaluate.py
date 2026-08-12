@@ -321,6 +321,7 @@ def main():
         return 1
 
     prompts_to_evaluate = [
+        "leonanluppi/bug_to_user_story_v1",
         f"{username}/bug_to_user_story_v2",
     ]
 
