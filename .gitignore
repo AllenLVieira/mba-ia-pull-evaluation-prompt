@@ -45,6 +45,6 @@ ENV/
 *.log
 
 # Project specific
-screenshots/
+# screenshots/ é versionado (evidências do desafio no README)
 results/
 .claude/

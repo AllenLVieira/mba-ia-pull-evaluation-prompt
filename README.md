@@ -64,11 +64,30 @@ subiu de 0.72 → **0.82** e a média de 0.80 → **0.86**, aprovando em todas a
 
 ### Resultados Finais
 
-**Dashboard do LangSmith:**
-- Prompt publicado: `https://smith.langchain.com/hub/testemba02/bug_to_user_story_v2`
-- Projeto de avaliação: `https://smith.langchain.com/projects/prompt-optimization-challenge-resolved-v2`
-  (torne o projeto público no LangSmith antes da entrega final e capture ali os screenshots
-  com as 15 execuções e o tracing de pelo menos 3 exemplos, conforme pedido no desafio)
+**Evidências no LangSmith:**
+- Prompt publicado (público): `https://smith.langchain.com/hub/testemba02/bug_to_user_story_v2`
+- Projeto de tracing com as execuções: `prompt-optimization-challenge-resolved-v2` (180 traces)
+- Dataset de avaliação: `prompt-optimization-challenge-resolved-v2-eval` (15 exemplos)
+- **Tracing público de 3 exemplos** (um por nível de complexidade), demonstrando a saída
+  adaptativa da iteração 2:
+  - Simples (carrinho): https://smith.langchain.com/public/13b76177-c0e7-49fd-9386-f476be1dd40e/r/12cd9744-9342-4a58-8d37-77e110ce58cf
+  - Médio (relatório lento, com `Contexto Técnico:`): https://smith.langchain.com/public/e59596cb-a974-4202-8932-8da230ca095e/r/ba54dee5-3851-456c-894b-941cce420039
+  - Complexo (relatórios gerenciais, com seções `=== ... ===` e blocos A/B/C/D): https://smith.langchain.com/public/4c1749d7-0094-45da-9242-7212b6db113f/r/b71b4468-e4d3-4802-a02d-22a50fb86510
+
+**Screenshots das evidências** (em [`screenshots/`](screenshots/)):
+
+| Evidência | Screenshot |
+|---|---|
+| Dataset de avaliação com 15 exemplos | ![Dataset com 15 exemplos](screenshots/01-dataset-15-exemplos.jpg) |
+| Execuções no projeto de tracing (gerações v2 + LLM-judge) | ![Execuções no projeto](screenshots/02-execucoes-projeto-tracing.jpg) |
+| Prompt v2 publicado no Hub (público, 2 commits = 2 iterações) | ![Prompt v2 publicado](screenshots/03-prompt-v2-publicado-hub.jpg) |
+| Trace — bug **simples** (saída compacta) | ![Trace simples](screenshots/04-trace-simples-carrinho.jpg) |
+| Trace — bug **médio** (User Story + `Contexto Técnico:`) | ![Trace médio](screenshots/05-trace-medio-relatorio-contexto-tecnico.jpg) |
+| Trace — bug **complexo** (blocos A/B/C/D + `=== CRITÉRIOS TÉCNICOS ===`) | ![Trace complexo](screenshots/06-trace-complexo-relatorios-gerenciais.jpg) |
+
+> As notas por métrica (todas ≥ 0.8) são calculadas por `src/evaluate.py` e exibidas no
+> terminal com `STATUS: APROVADO` (ver tabela abaixo). Os traces do LLM-judge no projeto
+> registram os scores individuais (`"score": 0.9`, `1.0`, ...) que compõem cada métrica.
 
 **Ambiente de avaliação:** provider **OpenAI** — `gpt-4o-mini` para gerar a User Story e
 `gpt-4o` como LLM-judge das métricas. Diferente do Gemini free tier (limitado a 15 req/min,
