@@ -3,10 +3,7 @@
 ## Documentação da Entrega
 
 Este README documenta o **processo e as evidências** desta entrega em três seções: Técnicas
-Aplicadas, Resultados Finais e Como Executar. O enunciado completo do desafio (objetivo,
-requisitos, critérios e estrutura obrigatória) é a especificação e está em
-[`INFO.md`](INFO.md) e no [repositório template](https://github.com/devfullcycle/mba-ia-pull-evaluation-prompt);
-não é reproduzido aqui para evitar duplicação.
+Aplicadas, Resultados Finais e Como Executar.
 
 ### Técnicas Aplicadas (Fase 2)
 
@@ -176,12 +173,3 @@ python src/evaluate.py
 ```bash
 pytest tests/test_prompts.py -v
 ```
-
----
-
-## Referência do desafio
-
-O enunciado completo — objetivo, requisitos do prompt, critérios de aprovação, testes,
-estrutura obrigatória e entregáveis — é a especificação do desafio e está em
-[`INFO.md`](INFO.md). Este README cobre apenas a documentação da entrega (técnicas,
-resultados e execução), como pedido no item "README.md deve conter" da spec.
